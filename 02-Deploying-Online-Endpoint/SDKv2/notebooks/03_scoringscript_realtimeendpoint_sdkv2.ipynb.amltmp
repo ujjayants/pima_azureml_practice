@@ -1,0 +1,469 @@
+{
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Script Deployment: Deploy and score a machine learning model by using an online endpoint using Scoring Script\n",
+        "\n",
+        "**Workflow** \n",
+        "\n",
+        "1. Initialize Workspace & create workspace handle \n",
+        "2. Initialize Environment \n",
+        "3. configure Endpoint \n",
+        "4. Get reference of the register model \n",
+        "5. create a scoring script \n",
+        "6. Configure Deployment \n",
+        "7. Assign traffic to the deployment \n",
+        "8. Test the Deployment \n",
+        "9. Delete the Deployment"
+      ],
+      "metadata": {
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "**Step 1: Initialize Workspace and Create Workspace handle**"
+      ],
+      "metadata": {
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "from azureml.core import Workspace\n",
+        "from azure.ai.ml import MLClient\n",
+        "from azure.identity import DefaultAzureCredential\n",
+        "\n",
+        "# Initialize  workspace\n",
+        "ws = Workspace.from_config()  \n",
+        "\n",
+        "# Get a handle to the workspace\n",
+        "credential = DefaultAzureCredential()  # authenticate\n",
+        "ml_client = MLClient( credential=credential,\n",
+        "                      subscription_id=ws.subscription_id,\n",
+        "                      resource_group_name=ws.resource_group,\n",
+        "                      workspace_name=ws.name,\n",
+        "                    )\n"
+      ],
+      "outputs": [],
+      "execution_count": 1,
+      "metadata": {
+        "gather": {
+          "logged": 1700025777301
+        }
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "**Step 2: Initialize Environment**"
+      ],
+      "metadata": {
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "import os\n",
+        "from azure.ai.ml.entities import Environment\n",
+        "\n",
+        "custom_env_name  = \"ENV-SDKv2\"\n",
+        "# dependencies_dir = '../dependencies'\n",
+        "# env = Environment( name=custom_env_name,\n",
+        "#                    description=\"Evironment for python SDKv2 Execution\",\n",
+        "#                    conda_file=os.path.join(dependencies_dir, \"conda.yaml\"),\n",
+        "#                    image=\"mcr.microsoft.com/azureml/openmpi4.1.0-ubuntu20.04:latest\",\n",
+        "#                  )\n",
+        "# env = ml_client.environments.create_or_update(env)\n",
+        "\n",
+        "# GET ENVIRONMENT\n",
+        "# use 'label' parameter to get latest environment for example label='latest'\n",
+        "# use 'version' parameter to get specific version environment, for example version=2\n",
+        "env = ml_client.environments.get(name=custom_env_name, label='latest') \n",
+        "\n",
+        "print(f\"Environment with name {env.name} is registered to workspace, the environment version is {env.version}\")"
+      ],
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": "Environment with name ENV-SDKv2 is registered to workspace, the environment version is 9\n"
+        }
+      ],
+      "execution_count": 2,
+      "metadata": {
+        "gather": {
+          "logged": 1700025777728
+        },
+        "jupyter": {
+          "outputs_hidden": false,
+          "source_hidden": false
+        },
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "Step 3: Configure Endpoint\n",
+        "\n",
+        "**Note:** auth_mode is either **key** or **token**. The key difference is **token** expires and **key** won't"
+      ],
+      "metadata": {
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "from azure.ai.ml.entities import ManagedOnlineEndpoint\n",
+        "\n",
+        "# online endpoint\n",
+        "online_endpoint_name = \"pima-endpoint-SDKv2-4\"\n",
+        "\n",
+        "endpoint = ManagedOnlineEndpoint(\n",
+        "    name=online_endpoint_name,\n",
+        "    description=\"this is a sample online endpoint for mlflow model\",\n",
+        "    auth_mode=\"key\",\n",
+        "    tags={\"SDK\": \"2\"},\n",
+        ")\n",
+        "# create endpoint\n",
+        "ml_client.begin_create_or_update(endpoint).result()"
+      ],
+      "outputs": [
+        {
+          "output_type": "execute_result",
+          "execution_count": 3,
+          "data": {
+            "text/plain": "ManagedOnlineEndpoint({'public_network_access': 'Enabled', 'provisioning_state': 'Succeeded', 'scoring_uri': 'https://pima-endpoint-sdkv2-4.centralindia.inference.ml.azure.com/score', 'openapi_uri': 'https://pima-endpoint-sdkv2-4.centralindia.inference.ml.azure.com/swagger.json', 'name': 'pima-endpoint-sdkv2-4', 'description': 'this is a sample online endpoint for mlflow model', 'tags': {'SDK': '2'}, 'properties': {'azureml.onlineendpointid': '/subscriptions/ba5d6a04-af22-45ea-bc5a-946ef1c32949/resourcegroups/us_azure_practice/providers/microsoft.machinelearningservices/workspaces/us_azure/onlineendpoints/pima-endpoint-sdkv2-4', 'AzureAsyncOperationUri': 'https://management.azure.com/subscriptions/ba5d6a04-af22-45ea-bc5a-946ef1c32949/providers/Microsoft.MachineLearningServices/locations/centralindia/mfeOperationsStatus/oe:a78ffdcd-763f-4353-b2d5-5456db1b024f:e23f2eb0-8773-4eba-881a-f90051b934d6?api-version=2022-02-01-preview'}, 'print_as_yaml': True, 'id': '/subscriptions/ba5d6a04-af22-45ea-bc5a-946ef1c32949/resourceGroups/us_azure_practice/providers/Microsoft.MachineLearningServices/workspaces/us_azure/onlineEndpoints/pima-endpoint-sdkv2-4', 'Resource__source_path': None, 'base_path': '/mnt/batch/tasks/shared/LS_root/mounts/clusters/instancenotebook/code/Users/uj_az/PIMA/02-Deploying-Online-Endpoint/SDKv2/notebooks', 'creation_context': None, 'serialize': <msrest.serialization.Serializer object at 0x7f779e7768c0>, 'auth_mode': 'key', 'location': 'centralindia', 'identity': <azure.ai.ml.entities._credentials.IdentityConfiguration object at 0x7f779e776710>, 'traffic': {}, 'mirror_traffic': {}, 'kind': 'Managed'})"
+          },
+          "metadata": {}
+        }
+      ],
+      "execution_count": 3,
+      "metadata": {
+        "gather": {
+          "logged": 1700025874205
+        },
+        "jupyter": {
+          "outputs_hidden": false,
+          "source_hidden": false
+        },
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "**Step 4: Get referrence to Registered Model**"
+      ],
+      "metadata": {
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# referencing model from model registry\n",
+        "model_name = 'pima_model_SDKv2_04' \n",
+        "model = ml_client.models.get(name=model_name, label=\"latest\")"
+      ],
+      "outputs": [],
+      "execution_count": 4,
+      "metadata": {
+        "gather": {
+          "logged": 1700025874435
+        },
+        "jupyter": {
+          "outputs_hidden": false,
+          "source_hidden": false
+        },
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "**Step 5: Create a Scoring Script and save in 'src' folder**"
+      ],
+      "metadata": {
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "**Step 6: Configure Deployment**\n",
+        "\n",
+        "**Instance type**: The VM size to use for the deployment. For the list of supported sizes.[cick here](https://learn.microsoft.com/en-us/azure/machine-learning/reference-managed-online-endpoints-vm-sku-list?view=azureml-api-2)"
+      ],
+      "metadata": {
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "from azure.ai.ml.entities import ManagedOnlineDeployment, CodeConfiguration\n",
+        "\n",
+        "deployment_name   = \"script-deployment\"\n",
+        "deployment_script = ManagedOnlineDeployment(\n",
+        "                name=deployment_name, # deployment name\n",
+        "                endpoint_name=online_endpoint_name,  \n",
+        "                model=model,\n",
+        "                environment=env,\n",
+        "                code_configuration=CodeConfiguration(\n",
+        "                code=\"../src\", scoring_script=\"pima_scoreOnlineEndpoint_SDKv2.py\"\n",
+        "                ),\n",
+        "                instance_type=\"Standard_F4s_v2\",\n",
+        "                instance_count=1,\n",
+        "            )\n",
+        "\n",
+        "ml_client.online_deployments.begin_create_or_update(deployment=deployment_script).result() # create local deployment\n"
+      ],
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stderr",
+          "text": "Check: endpoint pima-endpoint-SDKv2-4 exists\n\u001b[32mUploading src (0.0 MBs): 100%|██████████| 4257/4257 [00:00<00:00, 57007.88it/s]\n\u001b[39m\n\n"
+        },
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": "...."
+        }
+      ],
+      "execution_count": 5,
+      "metadata": {
+        "gather": {
+          "logged": 1699958451972
+        },
+        "jupyter": {
+          "outputs_hidden": false,
+          "source_hidden": false
+        },
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "**Step 7: Assign traffic to the deployment**"
+      ],
+      "metadata": {
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# assign traffic to the deployment\n",
+        "endpoint.traffic = {deployment_name: 100}\n",
+        "ml_client.begin_create_or_update(endpoint).result()"
+      ],
+      "outputs": [],
+      "execution_count": null,
+      "metadata": {
+        "gather": {
+          "logged": 1699958537659
+        },
+        "jupyter": {
+          "outputs_hidden": false,
+          "source_hidden": false
+        },
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "**Step 8: Test the endpoint with sample data**\n",
+        "\n",
+        "We will send a sample request using a [json](../../data/sample_request.json) file.\n"
+      ],
+      "metadata": {
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# testing the endpoint\n",
+        "ml_client.online_endpoints.invoke(\n",
+        "    endpoint_name=online_endpoint_name,\n",
+        "    deployment_name=deployment_name,\n",
+        "    request_file=\"../../data/sample_request.json\",\n",
+        ")"
+      ],
+      "outputs": [
+        {
+          "output_type": "execute_result",
+          "execution_count": 7,
+          "data": {
+            "text/plain": "'[0, 0]'"
+          },
+          "metadata": {}
+        }
+      ],
+      "execution_count": 7,
+      "metadata": {
+        "gather": {
+          "logged": 1699958612335
+        },
+        "jupyter": {
+          "outputs_hidden": false,
+          "source_hidden": false
+        },
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "**Step 9: Delete Endpoint**"
+      ],
+      "metadata": {
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "ml_client.online_endpoints.begin_delete(name=online_endpoint_name)"
+      ],
+      "outputs": [
+        {
+          "output_type": "execute_result",
+          "execution_count": 10,
+          "data": {
+            "text/plain": "<azure.core.polling._poller.LROPoller at 0x7fc7561d1c30>"
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": ".................................................................."
+        }
+      ],
+      "execution_count": 10,
+      "metadata": {
+        "gather": {
+          "logged": 1699958738065
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [],
+      "outputs": [],
+      "execution_count": null,
+      "metadata": {}
+    }
+  ],
+  "metadata": {
+    "kernel_info": {
+      "name": "python310-sdkv2"
+    },
+    "kernelspec": {
+      "name": "python310-sdkv2",
+      "language": "python",
+      "display_name": "Python 3.10 - SDK v2"
+    },
+    "language_info": {
+      "name": "python",
+      "version": "3.10.11",
+      "mimetype": "text/x-python",
+      "codemirror_mode": {
+        "name": "ipython",
+        "version": 3
+      },
+      "pygments_lexer": "ipython3",
+      "nbconvert_exporter": "python",
+      "file_extension": ".py"
+    },
+    "microsoft": {
+      "host": {
+        "AzureML": {
+          "notebookHasBeenCompleted": true
+        }
+      },
+      "ms_spell_check": {
+        "ms_spell_check_language": "en"
+      }
+    },
+    "nteract": {
+      "version": "nteract-front-end@1.0.0"
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 2
+}

@@ -1,0 +1,651 @@
+{
+  "cells": [
+    {
+      "attachments": {},
+      "cell_type": "markdown",
+      "source": [
+        "#### Workflow\n",
+        "1. Initialize \n",
+        "    - Workspace\n",
+        "    - Default Datastore (to store pipeline step output)\n",
+        "    - compute Cluster (to run the pipeline)\n",
+        "    - Environment\n",
+        "    - Experiment\n",
+        "2. Get Input Data\n",
+        "3. create Pipeline Output folders to store pipeline step output\n",
+        "4. create pipeline steps\n",
+        "5. Submit Pipeline\n",
+        "6. Create an Endpoint and Publish Pipeline \n",
+        "7. Invoke Pipeline \n"
+      ],
+      "metadata": {
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "attachments": {},
+      "cell_type": "markdown",
+      "source": [
+        "##### Step 1: Initialize Workspace"
+      ],
+      "metadata": {
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "from azureml.core import Workspace\n",
+        "\n",
+        "#Initialize Workspace\n",
+        "ws = Workspace.from_config()\n",
+        "datastore =  ws.get_default_datastore() # to store pipeline data output, mandatory to define a default datastore "
+      ],
+      "outputs": [],
+      "execution_count": 12,
+      "metadata": {
+        "gather": {
+          "logged": 1699989244131
+        },
+        "jupyter": {
+          "outputs_hidden": false,
+          "source_hidden": false
+        },
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "attachments": {},
+      "cell_type": "markdown",
+      "source": [
+        "##### Get Or Create Compute Cluster"
+      ],
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "from azureml.core.compute import ComputeTarget, AmlCompute\n",
+        "from azureml.core.compute_target import ComputeTargetException\n",
+        "\n",
+        "# Initialize Compute Target\n",
+        "# Choose a name for your CPU cluster\n",
+        "compute = 'ML-Pipeline-Cluster'\n",
+        "\n",
+        "# Verify that cluster does not exist already\n",
+        "try:\n",
+        "    cpu_cluster = ComputeTarget(workspace=ws, name=compute)\n",
+        "    print('Found existing cluster, use it.')\n",
+        "except ComputeTargetException:\n",
+        "    compute_config = AmlCompute.provisioning_configuration(vm_size='STANDARD_D2_V2',\n",
+        "                                                           max_nodes=4,\n",
+        "                                                           idle_seconds_before_scaledown=300)\n",
+        "    cpu_cluster = ComputeTarget.create(ws, compute, compute_config)\n",
+        "\n",
+        "cpu_cluster.wait_for_completion(show_output=True)"
+      ],
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": "Found existing cluster, use it.\nSucceeded\nAmlCompute wait for completion finished\n\nMinimum number of nodes requested have been provisioned\n"
+        }
+      ],
+      "execution_count": 13,
+      "metadata": {
+        "gather": {
+          "logged": 1699989244774
+        }
+      }
+    },
+    {
+      "attachments": {},
+      "cell_type": "markdown",
+      "source": [
+        "##### Create or Get Environment"
+      ],
+      "metadata": {}
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "from azureml.core import Environment\n",
+        "from azureml.core.conda_dependencies import CondaDependencies\n",
+        "from azureml.core.runconfig import RunConfiguration\n",
+        "\n",
+        "# creating an environment\n",
+        "env_name = 'ENV-SDKv1'\n",
+        "\n",
+        "# ---- Create environment using defining packages\n",
+        "# custom_env = Environment('aml-scikit-learn')\n",
+        "# conda_dep = CondaDependencies.create(conda_packages=['scikit-learn','pandas','numpy','pip', 'pyodbc','sqlalchemy'],\n",
+        "#                                      pip_packages=['azureml-defaults'])\n",
+        "\n",
+        "# custom_env.python.conda_dependencies = conda_dep\n",
+        "# register the environment\n",
+        "# custom_env.register(workspace=ws)\n",
+        "\n",
+        "# ---- create enviroment using .yaml file\n",
+        "##python_packages = Environment.from_conda_specification(env_name, '../dependencies/conda.yaml')\n",
+        "# register the environment\n",
+        "##python_packages.register(workspace=ws)\n",
+        "\n",
+        "# # calling registered environent\n",
+        "reg_env = Environment.get(ws, env_name)\n",
+        "\n",
+        "# create a run config object for the pipeline\n",
+        "pipeline_runconfig = RunConfiguration()\n",
+        "\n",
+        "# # use the compute target\n",
+        "pipeline_runconfig.target = compute\n",
+        "\n",
+        "# # assigning the run configuration to the envrionment\n",
+        "pipeline_runconfig.environment = reg_env\n",
+        "print('RunConfiguration created')"
+      ],
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": "RunConfiguration created\n"
+        }
+      ],
+      "execution_count": 14,
+      "metadata": {
+        "gather": {
+          "logged": 1699989245110
+        },
+        "jupyter": {
+          "outputs_hidden": false,
+          "source_hidden": false
+        },
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "from azureml.core import Experiment\n",
+        "\n",
+        "# create an experiment\n",
+        "experiment_name = 'Pima_Training_pipeline_SDKv1'\n",
+        "experiment = Experiment(workspace = ws, name = experiment_name)"
+      ],
+      "outputs": [],
+      "execution_count": 15,
+      "metadata": {
+        "gather": {
+          "logged": 1699989245311
+        },
+        "jupyter": {
+          "outputs_hidden": false,
+          "source_hidden": false
+        },
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "attachments": {},
+      "cell_type": "markdown",
+      "source": [
+        "#### Step 2 : Get Input Data"
+      ],
+      "metadata": {
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "from azureml.core import Dataset\n",
+        "\n",
+        "# Get Input Data\n",
+        "dataset_name = 'pima-sdk-v1' \n",
+        "df_tb   = Dataset.get_by_name(workspace=ws, name= dataset_name) # loading data from Dataset"
+      ],
+      "outputs": [],
+      "execution_count": 16,
+      "metadata": {
+        "gather": {
+          "logged": 1699989245696
+        },
+        "jupyter": {
+          "outputs_hidden": false,
+          "source_hidden": false
+        },
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "attachments": {},
+      "cell_type": "markdown",
+      "source": [
+        "##### Step 3: Create pipeline Output folder"
+      ],
+      "metadata": {
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "from azureml.pipeline.core import Pipeline, PipelineData, PipelineParameter\n",
+        "\n",
+        "# creating a output folder\n",
+        "pre_process_output_folder = PipelineData(name='pre_process' , datastore=datastore)\n",
+        "post_process_output_folder= PipelineData(name='post_process',  datastore=datastore)\n",
+        "final_output_folder  = PipelineData(name='final_output',  datastore=datastore)"
+      ],
+      "outputs": [],
+      "execution_count": 17,
+      "metadata": {
+        "gather": {
+          "logged": 1699989246875
+        },
+        "jupyter": {
+          "outputs_hidden": false,
+          "source_hidden": false
+        },
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "attachments": {},
+      "cell_type": "markdown",
+      "source": [
+        "#### Step 4: Pipeline Steps"
+      ],
+      "metadata": {
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "from azureml.pipeline.steps import PythonScriptStep\n",
+        "\n",
+        "# creating pipeline steps\n",
+        "pre_process_step = PythonScriptStep(name = 'step 1: Data Preparation', \n",
+        "                                    script_name='pima_dataProcessing_SDKv1.py', \n",
+        "                                    arguments= [\n",
+        "                                                '--input_data'  , df_tb.as_named_input('raw_data'),\n",
+        "                                                '--train_test_ratio', 0.3, \n",
+        "                                                '--output', pre_process_output_folder],   \n",
+        "                                    outputs  = [pre_process_output_folder],\n",
+        "                                    compute_target=compute, \n",
+        "                                    runconfig=pipeline_runconfig, \n",
+        "                                    allow_reuse=False, \n",
+        "                                    source_directory='../src')\n",
+        "\n",
+        "model_training_step = PythonScriptStep(name = 'step 2: Model Training', \n",
+        "                                    script_name='pima_modelTraining_SDKv1.py',\n",
+        "                                    arguments= ['--input_data',pre_process_output_folder, \n",
+        "                                                \n",
+        "                                                '--output', post_process_output_folder], \n",
+        "                                    inputs   = [pre_process_output_folder], \n",
+        "                                    outputs  = [post_process_output_folder], \n",
+        "                                    compute_target=compute, \n",
+        "                                    runconfig=pipeline_runconfig, \n",
+        "                                    allow_reuse=False, \n",
+        "                                    source_directory='../src') \n",
+        "\n",
+        "model_register_step = PythonScriptStep(name = 'step 3: Model Evaluation and registration', \n",
+        "                                script_name='pima_modelRegister_SDKv1.py',\n",
+        "                                arguments= ['--actual_prediction_data',post_process_output_folder,\n",
+        "                                            '--output', final_output_folder\n",
+        "                                           ], \n",
+        "                                inputs  = [post_process_output_folder], \n",
+        "                                outputs = [final_output_folder], \n",
+        "                                compute_target=compute, \n",
+        "                                runconfig=pipeline_runconfig, \n",
+        "                                allow_reuse=False,\n",
+        "                                source_directory='../src')\n",
+        "\n",
+        "pipeline = Pipeline(workspace=ws, steps=[pre_process_step,model_training_step, model_register_step]) \n",
+        "pipeline.validate()"
+      ],
+      "outputs": [
+        {
+          "output_type": "execute_result",
+          "execution_count": 18,
+          "data": {
+            "text/plain": "[]"
+          },
+          "metadata": {}
+        }
+      ],
+      "execution_count": 18,
+      "metadata": {
+        "gather": {
+          "logged": 1699989248968
+        },
+        "jupyter": {
+          "outputs_hidden": false,
+          "source_hidden": false
+        },
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "attachments": {},
+      "cell_type": "markdown",
+      "source": [
+        "##### Step 5: Submit Pipeline"
+      ],
+      "metadata": {
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# Run the pipeline as an experiment\n",
+        "pipeline_run = Experiment(ws, 'Pima_Training_pipeline_SDKv1').submit(pipeline, continue_on_step_failure=True,)\n",
+        "pipeline_run.wait_for_completion(show_output=True)"
+      ],
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": "Created step step 1: Data Preparation [8be655a7][d2ddb2e6-1da4-40a4-a33c-b5c9a93472a6], (This step will run and generate new outputs)\nCreated step step 2: Model Training [c737a3c2][9cfbc17c-4db0-4227-ae90-0c56bdb28252], (This step will run and generate new outputs)\nCreated step step 3: Model Evaluation and registration [7af1b054][47a2fe4b-7506-424e-a4d1-09319d1a5ea1], (This step will run and generate new outputs)\nSubmitted PipelineRun 864659d7-122f-4e42-bb08-0b810dec56e3\nLink to Azure Machine Learning Portal: https://ml.azure.com/runs/864659d7-122f-4e42-bb08-0b810dec56e3?wsid=/subscriptions/ba5d6a04-af22-45ea-bc5a-946ef1c32949/resourcegroups/us_azure_practice/workspaces/us_azure&tid=5ac231ff-07da-46e9-9b1d-c924625f23bd\nPipelineRunId: 864659d7-122f-4e42-bb08-0b810dec56e3\nLink to Azure Machine Learning Portal: https://ml.azure.com/runs/864659d7-122f-4e42-bb08-0b810dec56e3?wsid=/subscriptions/ba5d6a04-af22-45ea-bc5a-946ef1c32949/resourcegroups/us_azure_practice/workspaces/us_azure&tid=5ac231ff-07da-46e9-9b1d-c924625f23bd\nPipelineRun Status: NotStarted\nPipelineRun Status: Running\n\n\nStepRunId: b3ac3f2a-b6b7-4326-a380-ea7fec331f14\nLink to Azure Machine Learning Portal: https://ml.azure.com/runs/b3ac3f2a-b6b7-4326-a380-ea7fec331f14?wsid=/subscriptions/ba5d6a04-af22-45ea-bc5a-946ef1c32949/resourcegroups/us_azure_practice/workspaces/us_azure&tid=5ac231ff-07da-46e9-9b1d-c924625f23bd\nStepRun( step 1: Data Preparation ) Status: NotStarted\nStepRun( step 1: Data Preparation ) Status: Running\n\nStepRun(step 1: Data Preparation) Execution Summary\n====================================================\nStepRun( step 1: Data Preparation ) Status: Finished\n{'runId': 'b3ac3f2a-b6b7-4326-a380-ea7fec331f14', 'target': 'ML-Pipeline-Cluster', 'status': 'Completed', 'startTimeUtc': '2023-11-14T19:14:46.88351Z', 'endTimeUtc': '2023-11-14T19:15:05.623169Z', 'services': {}, 'properties': {'ContentSnapshotId': '681ab40f-e551-44bd-9e15-68b084e4bd81', 'StepType': 'PythonScriptStep', 'ComputeTargetType': 'AmlCompute', 'azureml.moduleid': 'd2ddb2e6-1da4-40a4-a33c-b5c9a93472a6', 'azureml.moduleName': 'step 1: Data Preparation', 'azureml.runsource': 'azureml.StepRun', 'azureml.nodeid': '8be655a7', 'azureml.pipelinerunid': '864659d7-122f-4e42-bb08-0b810dec56e3', 'azureml.pipeline': '864659d7-122f-4e42-bb08-0b810dec56e3', 'azureml.rootpipelinerunid': '864659d7-122f-4e42-bb08-0b810dec56e3', 'azureml.pipelineComponent': 'masterescloud', '_azureml.ComputeTargetType': 'amlctrain', 'ProcessInfoFile': 'azureml-logs/process_info.json', 'ProcessStatusFile': 'azureml-logs/process_status.json'}, 'inputDatasets': [{'dataset': {'id': 'd481022a-f5e3-45a3-9411-d672e923b8ed'}, 'consumptionDetails': {'type': 'RunInput', 'inputName': 'raw_data', 'mechanism': 'Direct'}}], 'outputDatasets': [], 'runDefinition': {'script': 'pima_dataProcessing_SDKv1.py', 'command': '', 'useAbsolutePath': False, 'arguments': ['--input_data', 'DatasetConsumptionConfig:raw_data', '--train_test_ratio', '0.3', '--output', '$AZUREML_DATAREFERENCE_pre_process'], 'sourceDirectoryDataStore': None, 'framework': 'Python', 'communicator': 'None', 'target': 'ML-Pipeline-Cluster', 'dataReferences': {'pre_process': {'dataStoreName': 'workspaceblobstore', 'mode': 'Mount', 'pathOnDataStore': 'azureml/b3ac3f2a-b6b7-4326-a380-ea7fec331f14/pre_process', 'pathOnCompute': None, 'overwrite': False}}, 'data': {'raw_data': {'dataLocation': {'dataset': {'id': 'd481022a-f5e3-45a3-9411-d672e923b8ed', 'name': None, 'version': '1'}, 'dataPath': None, 'uri': None, 'type': None}, 'mechanism': 'Direct', 'environmentVariableName': 'raw_data', 'pathOnCompute': None, 'overwrite': False, 'options': None}}, 'outputData': {}, 'datacaches': [], 'jobName': None, 'maxRunDurationSeconds': None, 'nodeCount': 1, 'instanceTypes': [], 'priority': None, 'credentialPassthrough': False, 'identity': None, 'environment': {'name': 'ENV-SDKv1', 'version': '9', 'assetId': 'azureml://locations/centralindia/workspaces/a78ffdcd-763f-4353-b2d5-5456db1b024f/environments/ENV-SDKv1/versions/9', 'autoRebuild': True, 'python': {'interpreterPath': 'python', 'userManagedDependencies': False, 'condaDependencies': {'name': 'model-env', 'channels': ['anaconda', 'conda-forge'], 'dependencies': ['python=3.8', 'numpy=1.21.2', 'pip>=21.2.4', 'scikit-learn=1.1.1', 'pandas>=1.1,<1.2', {'pip': ['inference-schema>=1.5.0', 'azureml-defaults==1.49.0']}]}, 'baseCondaEnvironment': None}, 'environmentVariables': {'EXAMPLE_ENV_VAR': 'EXAMPLE_VALUE'}, 'docker': {'baseImage': 'mcr.microsoft.com/azureml/openmpi4.1.0-ubuntu20.04:20230509.v1', 'platform': {'os': 'Linux', 'architecture': 'amd64'}, 'baseDockerfile': None, 'baseImageRegistry': {'address': None, 'username': None, 'password': None}, 'enabled': False, 'arguments': []}, 'spark': {'repositories': [], 'packages': [], 'precachePackages': True}, 'inferencingStackVersion': None}, 'history': {'outputCollection': True, 'directoriesToWatch': ['logs'], 'enableMLflowTracking': True, 'snapshotProject': True}, 'spark': {'configuration': {'spark.app.name': 'Azure ML Experiment', 'spark.yarn.maxAppAttempts': '1'}}, 'parallelTask': {'maxRetriesPerWorker': 0, 'workerCountPerNode': 1, 'terminalExitCodes': None, 'configuration': {}}, 'amlCompute': {'name': None, 'vmSize': None, 'retainCluster': False, 'clusterMaxNodeCount': 1}, 'aiSuperComputer': {'instanceType': 'D2', 'imageVersion': 'pytorch-1.7.0', 'location': None, 'aiSuperComputerStorageData': None, 'interactive': False, 'scalePolicy': None, 'virtualClusterArmId': None, 'tensorboardLogDirectory': None, 'sshPublicKey': None, 'sshPublicKeys': None, 'enableAzmlInt': True, 'priority': 'Medium', 'slaTier': 'Standard', 'userAlias': None}, 'kubernetesCompute': {'instanceType': None}, 'tensorflow': {'workerCount': 1, 'parameterServerCount': 1}, 'mpi': {'processCountPerNode': 1}, 'pyTorch': {'communicationBackend': 'nccl', 'processCount': None}, 'hdi': {'yarnDeployMode': 'Cluster'}, 'containerInstance': {'region': None, 'cpuCores': 2.0, 'memoryGb': 3.5}, 'exposedPorts': None, 'docker': {'useDocker': False, 'sharedVolumes': True, 'shmSize': '2g', 'arguments': []}, 'cmk8sCompute': {'configuration': {}}, 'commandReturnCodeConfig': {'returnCode': 'Zero', 'successfulReturnCodes': []}, 'environmentVariables': {}, 'applicationEndpoints': {}, 'parameters': []}, 'logFiles': {'logs/azureml/dataprep/0/backgroundProcess.log': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.b3ac3f2a-b6b7-4326-a380-ea7fec331f14/logs/azureml/dataprep/0/backgroundProcess.log?sv=2019-07-07&sr=b&sig=96EwZUuYYoxXi%2FRjLMHoemhrRbCoW10pAK4aWGd00Oc%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A20%3A56Z&ske=2023-11-15T21%3A30%3A56Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A04%3A59Z&se=2023-11-15T03%3A14%3A59Z&sp=r', 'logs/azureml/dataprep/0/backgroundProcess_Telemetry.log': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.b3ac3f2a-b6b7-4326-a380-ea7fec331f14/logs/azureml/dataprep/0/backgroundProcess_Telemetry.log?sv=2019-07-07&sr=b&sig=ZOJFsM6SXbd5dfLnnyBenrjAL8uqsMM%2FrMBz7Dx88Pk%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A20%3A56Z&ske=2023-11-15T21%3A30%3A56Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A04%3A59Z&se=2023-11-15T03%3A14%3A59Z&sp=r', 'logs/azureml/dataprep/0/rslex.log.2023-11-14-19': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.b3ac3f2a-b6b7-4326-a380-ea7fec331f14/logs/azureml/dataprep/0/rslex.log.2023-11-14-19?sv=2019-07-07&sr=b&sig=EtY22tYmsTfxZSInPZe9ZJ6eDI1shWmuHAZazijAtfY%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A20%3A56Z&ske=2023-11-15T21%3A30%3A56Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A04%3A59Z&se=2023-11-15T03%3A14%3A59Z&sp=r', 'logs/azureml/executionlogs.txt': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.b3ac3f2a-b6b7-4326-a380-ea7fec331f14/logs/azureml/executionlogs.txt?sv=2019-07-07&sr=b&sig=2MxI6mBcIRUMceKzX7ZZ4wV%2BA6B6SjH0LsBVGhewGrQ%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A20%3A56Z&ske=2023-11-15T21%3A30%3A56Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A04%3A59Z&se=2023-11-15T03%3A14%3A59Z&sp=r', 'logs/azureml/stderrlogs.txt': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.b3ac3f2a-b6b7-4326-a380-ea7fec331f14/logs/azureml/stderrlogs.txt?sv=2019-07-07&sr=b&sig=7p7uWnWhMSuEl3d5w%2BQbci4pDEXNUf8R%2B%2BvNCA6okdw%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A20%3A56Z&ske=2023-11-15T21%3A30%3A56Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A04%3A59Z&se=2023-11-15T03%3A14%3A59Z&sp=r', 'logs/azureml/stdoutlogs.txt': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.b3ac3f2a-b6b7-4326-a380-ea7fec331f14/logs/azureml/stdoutlogs.txt?sv=2019-07-07&sr=b&sig=ijOuR%2BxnYq7tooLuBpXulwaYnh1sH2lFKu1xiNheGXc%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A20%3A56Z&ske=2023-11-15T21%3A30%3A56Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A04%3A59Z&se=2023-11-15T03%3A14%3A59Z&sp=r', 'user_logs/std_log.txt': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.b3ac3f2a-b6b7-4326-a380-ea7fec331f14/user_logs/std_log.txt?sv=2019-07-07&sr=b&sig=0glAylIPMtgP6Bmz254G%2BRb%2BwfSOeKpy5mx0zjPPAwY%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A22%3A46Z&ske=2023-11-15T21%3A32%3A46Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A05%3A35Z&se=2023-11-15T03%3A15%3A35Z&sp=r', 'system_logs/cs_capability/cs-capability.log': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.b3ac3f2a-b6b7-4326-a380-ea7fec331f14/system_logs/cs_capability/cs-capability.log?sv=2019-07-07&sr=b&sig=1DZYTKRmbAH39b5An0L3ooxEmVpB%2BA%2Bpwxe4w3nYcD4%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A21%3A25Z&ske=2023-11-15T21%3A31%3A25Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A05%3A35Z&se=2023-11-15T03%3A15%3A35Z&sp=r', 'system_logs/data_capability/data-capability.log': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.b3ac3f2a-b6b7-4326-a380-ea7fec331f14/system_logs/data_capability/data-capability.log?sv=2019-07-07&sr=b&sig=Ef2pAOQYiALirHtvNT3T3ffImxsCSn6woE0mxjGuE7A%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A21%3A25Z&ske=2023-11-15T21%3A31%3A25Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A05%3A35Z&se=2023-11-15T03%3A15%3A35Z&sp=r', 'system_logs/data_capability/rslex.log.2023-11-14-19': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.b3ac3f2a-b6b7-4326-a380-ea7fec331f14/system_logs/data_capability/rslex.log.2023-11-14-19?sv=2019-07-07&sr=b&sig=daW0ll6bLRCRx4TfpUtWhoGEw%2F2UqvtOfcYrMohifd4%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A21%3A25Z&ske=2023-11-15T21%3A31%3A25Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A05%3A35Z&se=2023-11-15T03%3A15%3A35Z&sp=r', 'system_logs/hosttools_capability/hosttools-capability.log': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.b3ac3f2a-b6b7-4326-a380-ea7fec331f14/system_logs/hosttools_capability/hosttools-capability.log?sv=2019-07-07&sr=b&sig=vrd%2FRUXw2Qxc0atdTYfunNtXu9YtaxaXqM4qSHfMIxI%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A21%3A25Z&ske=2023-11-15T21%3A31%3A25Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A05%3A35Z&se=2023-11-15T03%3A15%3A35Z&sp=r', 'system_logs/lifecycler/execution-wrapper.log': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.b3ac3f2a-b6b7-4326-a380-ea7fec331f14/system_logs/lifecycler/execution-wrapper.log?sv=2019-07-07&sr=b&sig=RQBUhjoKdBt3mPSSe3iNq%2BXhPyJzhFDVxFe4pxh1dWA%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A21%3A25Z&ske=2023-11-15T21%3A31%3A25Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A05%3A35Z&se=2023-11-15T03%3A15%3A35Z&sp=r', 'system_logs/lifecycler/lifecycler.log': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.b3ac3f2a-b6b7-4326-a380-ea7fec331f14/system_logs/lifecycler/lifecycler.log?sv=2019-07-07&sr=b&sig=2YmEv5suLrpOHjvlEosawaduDU7NiVKNRJDIUvIbVXU%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A21%3A25Z&ske=2023-11-15T21%3A31%3A25Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A05%3A35Z&se=2023-11-15T03%3A15%3A35Z&sp=r', 'system_logs/metrics_capability/metrics-capability.log': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.b3ac3f2a-b6b7-4326-a380-ea7fec331f14/system_logs/metrics_capability/metrics-capability.log?sv=2019-07-07&sr=b&sig=%2FvkTfjFReN%2BI7H4orJznpDCHM6gR9qCF2wzgrpGs1gg%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A21%3A25Z&ske=2023-11-15T21%3A31%3A25Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A05%3A35Z&se=2023-11-15T03%3A15%3A35Z&sp=r', 'system_logs/snapshot_capability/snapshot-capability.log': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.b3ac3f2a-b6b7-4326-a380-ea7fec331f14/system_logs/snapshot_capability/snapshot-capability.log?sv=2019-07-07&sr=b&sig=xnn0uw4sh%2FJVb%2FWGVQAEixlxQAPXcy4ZyFXjKg1hYTk%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A21%3A25Z&ske=2023-11-15T21%3A31%3A25Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A05%3A35Z&se=2023-11-15T03%3A15%3A35Z&sp=r'}, 'submittedBy': 'U SINHA'}\n\n\n\n\nStepRunId: 59ca8062-9e6f-46a9-ba60-7f96a4aa639b\nLink to Azure Machine Learning Portal: https://ml.azure.com/runs/59ca8062-9e6f-46a9-ba60-7f96a4aa639b?wsid=/subscriptions/ba5d6a04-af22-45ea-bc5a-946ef1c32949/resourcegroups/us_azure_practice/workspaces/us_azure&tid=5ac231ff-07da-46e9-9b1d-c924625f23bd\nStepRun( step 2: Model Training ) Status: NotStarted\nStepRun( step 2: Model Training ) Status: Running\n\nStepRun(step 2: Model Training) Execution Summary\n==================================================\nStepRun( step 2: Model Training ) Status: Finished\n{'runId': '59ca8062-9e6f-46a9-ba60-7f96a4aa639b', 'target': 'ML-Pipeline-Cluster', 'status': 'Completed', 'startTimeUtc': '2023-11-14T19:17:18.783537Z', 'endTimeUtc': '2023-11-14T19:18:25.443442Z', 'services': {}, 'properties': {'ContentSnapshotId': '681ab40f-e551-44bd-9e15-68b084e4bd81', 'StepType': 'PythonScriptStep', 'ComputeTargetType': 'AmlCompute', 'azureml.moduleid': '9cfbc17c-4db0-4227-ae90-0c56bdb28252', 'azureml.moduleName': 'step 2: Model Training', 'azureml.runsource': 'azureml.StepRun', 'azureml.nodeid': 'c737a3c2', 'azureml.pipelinerunid': '864659d7-122f-4e42-bb08-0b810dec56e3', 'azureml.pipeline': '864659d7-122f-4e42-bb08-0b810dec56e3', 'azureml.rootpipelinerunid': '864659d7-122f-4e42-bb08-0b810dec56e3', 'azureml.pipelineComponent': 'masterescloud', '_azureml.ComputeTargetType': 'amlctrain', 'ProcessInfoFile': 'azureml-logs/process_info.json', 'ProcessStatusFile': 'azureml-logs/process_status.json'}, 'inputDatasets': [], 'outputDatasets': [], 'runDefinition': {'script': 'pima_modelTraining_SDKv1.py', 'command': '', 'useAbsolutePath': False, 'arguments': ['--input_data', '$AZUREML_DATAREFERENCE_pre_process', '--output', '$AZUREML_DATAREFERENCE_post_process'], 'sourceDirectoryDataStore': None, 'framework': 'Python', 'communicator': 'None', 'target': 'ML-Pipeline-Cluster', 'dataReferences': {'pre_process': {'dataStoreName': 'workspaceblobstore', 'mode': 'Mount', 'pathOnDataStore': 'azureml/b3ac3f2a-b6b7-4326-a380-ea7fec331f14/pre_process', 'pathOnCompute': None, 'overwrite': False}, 'post_process': {'dataStoreName': 'workspaceblobstore', 'mode': 'Mount', 'pathOnDataStore': 'azureml/59ca8062-9e6f-46a9-ba60-7f96a4aa639b/post_process', 'pathOnCompute': None, 'overwrite': False}}, 'data': {}, 'outputData': {}, 'datacaches': [], 'jobName': None, 'maxRunDurationSeconds': None, 'nodeCount': 1, 'instanceTypes': [], 'priority': None, 'credentialPassthrough': False, 'identity': None, 'environment': {'name': 'ENV-SDKv1', 'version': '9', 'assetId': 'azureml://locations/centralindia/workspaces/a78ffdcd-763f-4353-b2d5-5456db1b024f/environments/ENV-SDKv1/versions/9', 'autoRebuild': True, 'python': {'interpreterPath': 'python', 'userManagedDependencies': False, 'condaDependencies': {'name': 'model-env', 'channels': ['anaconda', 'conda-forge'], 'dependencies': ['python=3.8', 'numpy=1.21.2', 'pip>=21.2.4', 'scikit-learn=1.1.1', 'pandas>=1.1,<1.2', {'pip': ['inference-schema>=1.5.0', 'azureml-defaults==1.49.0']}]}, 'baseCondaEnvironment': None}, 'environmentVariables': {'EXAMPLE_ENV_VAR': 'EXAMPLE_VALUE'}, 'docker': {'baseImage': 'mcr.microsoft.com/azureml/openmpi4.1.0-ubuntu20.04:20230509.v1', 'platform': {'os': 'Linux', 'architecture': 'amd64'}, 'baseDockerfile': None, 'baseImageRegistry': {'address': None, 'username': None, 'password': None}, 'enabled': False, 'arguments': []}, 'spark': {'repositories': [], 'packages': [], 'precachePackages': True}, 'inferencingStackVersion': None}, 'history': {'outputCollection': True, 'directoriesToWatch': ['logs'], 'enableMLflowTracking': True, 'snapshotProject': True}, 'spark': {'configuration': {'spark.app.name': 'Azure ML Experiment', 'spark.yarn.maxAppAttempts': '1'}}, 'parallelTask': {'maxRetriesPerWorker': 0, 'workerCountPerNode': 1, 'terminalExitCodes': None, 'configuration': {}}, 'amlCompute': {'name': None, 'vmSize': None, 'retainCluster': False, 'clusterMaxNodeCount': 1}, 'aiSuperComputer': {'instanceType': 'D2', 'imageVersion': 'pytorch-1.7.0', 'location': None, 'aiSuperComputerStorageData': None, 'interactive': False, 'scalePolicy': None, 'virtualClusterArmId': None, 'tensorboardLogDirectory': None, 'sshPublicKey': None, 'sshPublicKeys': None, 'enableAzmlInt': True, 'priority': 'Medium', 'slaTier': 'Standard', 'userAlias': None}, 'kubernetesCompute': {'instanceType': None}, 'tensorflow': {'workerCount': 1, 'parameterServerCount': 1}, 'mpi': {'processCountPerNode': 1}, 'pyTorch': {'communicationBackend': 'nccl', 'processCount': None}, 'hdi': {'yarnDeployMode': 'Cluster'}, 'containerInstance': {'region': None, 'cpuCores': 2.0, 'memoryGb': 3.5}, 'exposedPorts': None, 'docker': {'useDocker': False, 'sharedVolumes': True, 'shmSize': '2g', 'arguments': []}, 'cmk8sCompute': {'configuration': {}}, 'commandReturnCodeConfig': {'returnCode': 'Zero', 'successfulReturnCodes': []}, 'environmentVariables': {}, 'applicationEndpoints': {}, 'parameters': []}, 'logFiles': {'logs/azureml/executionlogs.txt': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.59ca8062-9e6f-46a9-ba60-7f96a4aa639b/logs/azureml/executionlogs.txt?sv=2019-07-07&sr=b&sig=UOJ1GXrZPwGV09tbGUlM5uuW18Mg8ciKFnZuEz8B%2FSw%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A21%3A25Z&ske=2023-11-15T21%3A31%3A25Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A05%3A41Z&se=2023-11-15T03%3A15%3A41Z&sp=r', 'logs/azureml/stderrlogs.txt': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.59ca8062-9e6f-46a9-ba60-7f96a4aa639b/logs/azureml/stderrlogs.txt?sv=2019-07-07&sr=b&sig=rmkjFK9lpE%2BwqZi5yh9UZAZBz%2B3qlz4D5Bbi3qQUYOY%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A21%3A25Z&ske=2023-11-15T21%3A31%3A25Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A05%3A41Z&se=2023-11-15T03%3A15%3A41Z&sp=r', 'logs/azureml/stdoutlogs.txt': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.59ca8062-9e6f-46a9-ba60-7f96a4aa639b/logs/azureml/stdoutlogs.txt?sv=2019-07-07&sr=b&sig=7UQVAJ3BfLKE7gjsoAdruGV6eYPdqI%2FYNo%2BvsQHUs4M%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A21%3A25Z&ske=2023-11-15T21%3A31%3A25Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A05%3A41Z&se=2023-11-15T03%3A15%3A41Z&sp=r', 'user_logs/std_log.txt': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.59ca8062-9e6f-46a9-ba60-7f96a4aa639b/user_logs/std_log.txt?sv=2019-07-07&sr=b&sig=UomlkJk1hxd8NFbUl0fca1CvWgFxmcKxE2pekgTG2Ys%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A22%3A43Z&ske=2023-11-15T21%3A32%3A43Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A08%3A26Z&se=2023-11-15T03%3A18%3A26Z&sp=r', 'system_logs/cs_capability/cs-capability.log': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.59ca8062-9e6f-46a9-ba60-7f96a4aa639b/system_logs/cs_capability/cs-capability.log?sv=2019-07-07&sr=b&sig=OFJYtHQKGL5Uzg%2FAB1GIU%2BW8F4h4%2Bfl5JlOUO1PMb1k%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A22%3A43Z&ske=2023-11-15T21%3A32%3A43Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A08%3A26Z&se=2023-11-15T03%3A18%3A26Z&sp=r', 'system_logs/data_capability/data-capability.log': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.59ca8062-9e6f-46a9-ba60-7f96a4aa639b/system_logs/data_capability/data-capability.log?sv=2019-07-07&sr=b&sig=iIfxmfPE8rQNsWDVX79AaSrXaDnHFLlYHZu%2Fa08mzf4%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A22%3A43Z&ske=2023-11-15T21%3A32%3A43Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A08%3A26Z&se=2023-11-15T03%3A18%3A26Z&sp=r', 'system_logs/data_capability/rslex.log.2023-11-14-19': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.59ca8062-9e6f-46a9-ba60-7f96a4aa639b/system_logs/data_capability/rslex.log.2023-11-14-19?sv=2019-07-07&sr=b&sig=Yl0hsxDfstHsfJQQl99XBm9SUX39eAFbIGF%2Fqoz4BBw%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A22%3A43Z&ske=2023-11-15T21%3A32%3A43Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A08%3A26Z&se=2023-11-15T03%3A18%3A26Z&sp=r', 'system_logs/hosttools_capability/hosttools-capability.log': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.59ca8062-9e6f-46a9-ba60-7f96a4aa639b/system_logs/hosttools_capability/hosttools-capability.log?sv=2019-07-07&sr=b&sig=erRdyen%2B2650I4qDQHNouSz23ZhtiiCUJtGR%2FW4Sd0A%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A22%3A43Z&ske=2023-11-15T21%3A32%3A43Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A08%3A26Z&se=2023-11-15T03%3A18%3A26Z&sp=r', 'system_logs/lifecycler/execution-wrapper.log': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.59ca8062-9e6f-46a9-ba60-7f96a4aa639b/system_logs/lifecycler/execution-wrapper.log?sv=2019-07-07&sr=b&sig=Vt9LNVKApqr%2B%2By0rFYfWIO%2F7NPz1UmKV0jQQFVx5gik%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A22%3A43Z&ske=2023-11-15T21%3A32%3A43Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A08%3A26Z&se=2023-11-15T03%3A18%3A26Z&sp=r', 'system_logs/lifecycler/lifecycler.log': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.59ca8062-9e6f-46a9-ba60-7f96a4aa639b/system_logs/lifecycler/lifecycler.log?sv=2019-07-07&sr=b&sig=SOnXHHlDa8MR5aBs0Fimj6RtvViXiDWwcG2WKzyYnUo%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A22%3A43Z&ske=2023-11-15T21%3A32%3A43Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A08%3A26Z&se=2023-11-15T03%3A18%3A26Z&sp=r', 'system_logs/metrics_capability/metrics-capability.log': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.59ca8062-9e6f-46a9-ba60-7f96a4aa639b/system_logs/metrics_capability/metrics-capability.log?sv=2019-07-07&sr=b&sig=Pr7HKxPgq%2Ffv2K7Vva%2BYCkUzM%2FNjsfEb%2FSDRB%2BSjKD4%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A22%3A43Z&ske=2023-11-15T21%3A32%3A43Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A08%3A26Z&se=2023-11-15T03%3A18%3A26Z&sp=r', 'system_logs/snapshot_capability/snapshot-capability.log': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.59ca8062-9e6f-46a9-ba60-7f96a4aa639b/system_logs/snapshot_capability/snapshot-capability.log?sv=2019-07-07&sr=b&sig=XW9hw0ku0P5ET8Pc9W4QVAHxmCK1z%2FGUnlqKWGsP5w8%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A22%3A43Z&ske=2023-11-15T21%3A32%3A43Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A08%3A26Z&se=2023-11-15T03%3A18%3A26Z&sp=r'}, 'submittedBy': 'U SINHA'}\n\n\n\n\nStepRunId: dc22678f-a7fd-4eb1-b2c5-4be4da48a6a7\nLink to Azure Machine Learning Portal: https://ml.azure.com/runs/dc22678f-a7fd-4eb1-b2c5-4be4da48a6a7?wsid=/subscriptions/ba5d6a04-af22-45ea-bc5a-946ef1c32949/resourcegroups/us_azure_practice/workspaces/us_azure&tid=5ac231ff-07da-46e9-9b1d-c924625f23bd\nStepRun( step 3: Model Evaluation and registration ) Status: NotStarted\nStepRun( step 3: Model Evaluation and registration ) Status: Running\n\nStepRun(step 3: Model Evaluation and registration) Execution Summary\n=====================================================================\nStepRun( step 3: Model Evaluation and registration ) Status: Finished\n{'runId': 'dc22678f-a7fd-4eb1-b2c5-4be4da48a6a7', 'target': 'ML-Pipeline-Cluster', 'status': 'Completed', 'startTimeUtc': '2023-11-14T19:18:48.890747Z', 'endTimeUtc': '2023-11-14T19:19:07.388536Z', 'services': {}, 'properties': {'ContentSnapshotId': '681ab40f-e551-44bd-9e15-68b084e4bd81', 'StepType': 'PythonScriptStep', 'ComputeTargetType': 'AmlCompute', 'azureml.moduleid': '47a2fe4b-7506-424e-a4d1-09319d1a5ea1', 'azureml.moduleName': 'step 3: Model Evaluation and registration', 'azureml.runsource': 'azureml.StepRun', 'azureml.nodeid': '7af1b054', 'azureml.pipelinerunid': '864659d7-122f-4e42-bb08-0b810dec56e3', 'azureml.pipeline': '864659d7-122f-4e42-bb08-0b810dec56e3', 'azureml.rootpipelinerunid': '864659d7-122f-4e42-bb08-0b810dec56e3', 'azureml.pipelineComponent': 'masterescloud', '_azureml.ComputeTargetType': 'amlctrain', 'ProcessInfoFile': 'azureml-logs/process_info.json', 'ProcessStatusFile': 'azureml-logs/process_status.json'}, 'inputDatasets': [], 'outputDatasets': [], 'runDefinition': {'script': 'pima_modelRegister_SDKv1.py', 'command': '', 'useAbsolutePath': False, 'arguments': ['--actual_prediction_data', '$AZUREML_DATAREFERENCE_post_process', '--output', '$AZUREML_DATAREFERENCE_final_output'], 'sourceDirectoryDataStore': None, 'framework': 'Python', 'communicator': 'None', 'target': 'ML-Pipeline-Cluster', 'dataReferences': {'post_process': {'dataStoreName': 'workspaceblobstore', 'mode': 'Mount', 'pathOnDataStore': 'azureml/59ca8062-9e6f-46a9-ba60-7f96a4aa639b/post_process', 'pathOnCompute': None, 'overwrite': False}, 'final_output': {'dataStoreName': 'workspaceblobstore', 'mode': 'Mount', 'pathOnDataStore': 'azureml/dc22678f-a7fd-4eb1-b2c5-4be4da48a6a7/final_output', 'pathOnCompute': None, 'overwrite': False}}, 'data': {}, 'outputData': {}, 'datacaches': [], 'jobName': None, 'maxRunDurationSeconds': None, 'nodeCount': 1, 'instanceTypes': [], 'priority': None, 'credentialPassthrough': False, 'identity': None, 'environment': {'name': 'ENV-SDKv1', 'version': '9', 'assetId': 'azureml://locations/centralindia/workspaces/a78ffdcd-763f-4353-b2d5-5456db1b024f/environments/ENV-SDKv1/versions/9', 'autoRebuild': True, 'python': {'interpreterPath': 'python', 'userManagedDependencies': False, 'condaDependencies': {'name': 'model-env', 'channels': ['anaconda', 'conda-forge'], 'dependencies': ['python=3.8', 'numpy=1.21.2', 'pip>=21.2.4', 'scikit-learn=1.1.1', 'pandas>=1.1,<1.2', {'pip': ['inference-schema>=1.5.0', 'azureml-defaults==1.49.0']}]}, 'baseCondaEnvironment': None}, 'environmentVariables': {'EXAMPLE_ENV_VAR': 'EXAMPLE_VALUE'}, 'docker': {'baseImage': 'mcr.microsoft.com/azureml/openmpi4.1.0-ubuntu20.04:20230509.v1', 'platform': {'os': 'Linux', 'architecture': 'amd64'}, 'baseDockerfile': None, 'baseImageRegistry': {'address': None, 'username': None, 'password': None}, 'enabled': False, 'arguments': []}, 'spark': {'repositories': [], 'packages': [], 'precachePackages': True}, 'inferencingStackVersion': None}, 'history': {'outputCollection': True, 'directoriesToWatch': ['logs'], 'enableMLflowTracking': True, 'snapshotProject': True}, 'spark': {'configuration': {'spark.app.name': 'Azure ML Experiment', 'spark.yarn.maxAppAttempts': '1'}}, 'parallelTask': {'maxRetriesPerWorker': 0, 'workerCountPerNode': 1, 'terminalExitCodes': None, 'configuration': {}}, 'amlCompute': {'name': None, 'vmSize': None, 'retainCluster': False, 'clusterMaxNodeCount': 1}, 'aiSuperComputer': {'instanceType': 'D2', 'imageVersion': 'pytorch-1.7.0', 'location': None, 'aiSuperComputerStorageData': None, 'interactive': False, 'scalePolicy': None, 'virtualClusterArmId': None, 'tensorboardLogDirectory': None, 'sshPublicKey': None, 'sshPublicKeys': None, 'enableAzmlInt': True, 'priority': 'Medium', 'slaTier': 'Standard', 'userAlias': None}, 'kubernetesCompute': {'instanceType': None}, 'tensorflow': {'workerCount': 1, 'parameterServerCount': 1}, 'mpi': {'processCountPerNode': 1}, 'pyTorch': {'communicationBackend': 'nccl', 'processCount': None}, 'hdi': {'yarnDeployMode': 'Cluster'}, 'containerInstance': {'region': None, 'cpuCores': 2.0, 'memoryGb': 3.5}, 'exposedPorts': None, 'docker': {'useDocker': False, 'sharedVolumes': True, 'shmSize': '2g', 'arguments': []}, 'cmk8sCompute': {'configuration': {}}, 'commandReturnCodeConfig': {'returnCode': 'Zero', 'successfulReturnCodes': []}, 'environmentVariables': {}, 'applicationEndpoints': {}, 'parameters': []}, 'logFiles': {'logs/azureml/executionlogs.txt': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.dc22678f-a7fd-4eb1-b2c5-4be4da48a6a7/logs/azureml/executionlogs.txt?sv=2019-07-07&sr=b&sig=blH01LOgKHQ97Y8e5A1JUigkgGP2j%2BFReE7hEX6vq5o%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A22%3A25Z&ske=2023-11-15T21%3A32%3A25Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A08%3A33Z&se=2023-11-15T03%3A18%3A33Z&sp=r', 'logs/azureml/stderrlogs.txt': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.dc22678f-a7fd-4eb1-b2c5-4be4da48a6a7/logs/azureml/stderrlogs.txt?sv=2019-07-07&sr=b&sig=bKcq01PY88ibCuoX7YjYf6RPa10BWiW%2BZpf3TcxfuLM%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A22%3A25Z&ske=2023-11-15T21%3A32%3A25Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A08%3A33Z&se=2023-11-15T03%3A18%3A33Z&sp=r', 'logs/azureml/stdoutlogs.txt': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.dc22678f-a7fd-4eb1-b2c5-4be4da48a6a7/logs/azureml/stdoutlogs.txt?sv=2019-07-07&sr=b&sig=u2ltl2O7oTcyWIome4fiT65lnRMXL5tlpl5z7acST%2BM%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A22%3A25Z&ske=2023-11-15T21%3A32%3A25Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A08%3A33Z&se=2023-11-15T03%3A18%3A33Z&sp=r', 'user_logs/std_log.txt': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.dc22678f-a7fd-4eb1-b2c5-4be4da48a6a7/user_logs/std_log.txt?sv=2019-07-07&sr=b&sig=0cHLbfPgGY5Iu8LJvHL2Ma78xVw7IN27rY0vf3bU%2FjA%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A20%3A56Z&ske=2023-11-15T21%3A30%3A56Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A09%3A09Z&se=2023-11-15T03%3A19%3A09Z&sp=r', 'system_logs/cs_capability/cs-capability.log': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.dc22678f-a7fd-4eb1-b2c5-4be4da48a6a7/system_logs/cs_capability/cs-capability.log?sv=2019-07-07&sr=b&sig=vtMF04iQaoI%2FxmYGIuJYCZnIbO2BU8B18DDfXamDcnc%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A22%3A46Z&ske=2023-11-15T21%3A32%3A46Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A09%3A09Z&se=2023-11-15T03%3A19%3A09Z&sp=r', 'system_logs/data_capability/data-capability.log': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.dc22678f-a7fd-4eb1-b2c5-4be4da48a6a7/system_logs/data_capability/data-capability.log?sv=2019-07-07&sr=b&sig=TgrBiFUQB4Wa%2BLnFXvVdQOHHZMpYlP8gHGdWAgXSUEw%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A22%3A46Z&ske=2023-11-15T21%3A32%3A46Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A09%3A09Z&se=2023-11-15T03%3A19%3A09Z&sp=r', 'system_logs/data_capability/rslex.log.2023-11-14-19': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.dc22678f-a7fd-4eb1-b2c5-4be4da48a6a7/system_logs/data_capability/rslex.log.2023-11-14-19?sv=2019-07-07&sr=b&sig=Fi93naqyJ%2Fi7tfgcRy3mMLNLDKLBGiWJsypMnzaaTg8%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A22%3A46Z&ske=2023-11-15T21%3A32%3A46Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A09%3A09Z&se=2023-11-15T03%3A19%3A09Z&sp=r', 'system_logs/hosttools_capability/hosttools-capability.log': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.dc22678f-a7fd-4eb1-b2c5-4be4da48a6a7/system_logs/hosttools_capability/hosttools-capability.log?sv=2019-07-07&sr=b&sig=8hs9%2BBnUo9127ccSZDwrF0DPgzUqfyWR%2BDRWoPCXiUw%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A22%3A46Z&ske=2023-11-15T21%3A32%3A46Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A09%3A09Z&se=2023-11-15T03%3A19%3A09Z&sp=r', 'system_logs/lifecycler/execution-wrapper.log': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.dc22678f-a7fd-4eb1-b2c5-4be4da48a6a7/system_logs/lifecycler/execution-wrapper.log?sv=2019-07-07&sr=b&sig=YRgDjaD54C%2B5iwIpdgPHUpC7jWI%2Fk8U6Ep5E9LIk%2FDI%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A22%3A46Z&ske=2023-11-15T21%3A32%3A46Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A09%3A09Z&se=2023-11-15T03%3A19%3A09Z&sp=r', 'system_logs/lifecycler/lifecycler.log': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.dc22678f-a7fd-4eb1-b2c5-4be4da48a6a7/system_logs/lifecycler/lifecycler.log?sv=2019-07-07&sr=b&sig=lIQj%2FEeep%2F9xjbPiV9gxiIfOUCM%2FFLi7EIcAFNcW4EE%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A22%3A46Z&ske=2023-11-15T21%3A32%3A46Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A09%3A09Z&se=2023-11-15T03%3A19%3A09Z&sp=r', 'system_logs/metrics_capability/metrics-capability.log': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.dc22678f-a7fd-4eb1-b2c5-4be4da48a6a7/system_logs/metrics_capability/metrics-capability.log?sv=2019-07-07&sr=b&sig=Js45MDds%2FxtOdBrWqlPwmdJHDarefggKL%2BmRa8M68vk%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A22%3A46Z&ske=2023-11-15T21%3A32%3A46Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A09%3A09Z&se=2023-11-15T03%3A19%3A09Z&sp=r', 'system_logs/snapshot_capability/snapshot-capability.log': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.dc22678f-a7fd-4eb1-b2c5-4be4da48a6a7/system_logs/snapshot_capability/snapshot-capability.log?sv=2019-07-07&sr=b&sig=IyrhoePA57QAFMEQWkP3bruWsCY9he9TzHe8qbq5GbQ%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A22%3A46Z&ske=2023-11-15T21%3A32%3A46Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A09%3A09Z&se=2023-11-15T03%3A19%3A09Z&sp=r'}, 'submittedBy': 'U SINHA'}\n\n\n\nPipelineRun Execution Summary\n==============================\nPipelineRun Status: Finished\n{'runId': '864659d7-122f-4e42-bb08-0b810dec56e3', 'status': 'Completed', 'startTimeUtc': '2023-11-14T19:14:16.777193Z', 'endTimeUtc': '2023-11-14T19:19:08.401036Z', 'services': {}, 'properties': {'azureml.runsource': 'azureml.PipelineRun', 'runSource': 'SDK', 'runType': 'SDK', 'azureml.parameters': '{}', 'azureml.continue_on_step_failure': 'True', 'azureml.continue_on_failed_optional_input': 'True', 'azureml.pipelineComponent': 'pipelinerun', 'azureml.pipelines.stages': '{\"Initialization\":null,\"Execution\":{\"StartTime\":\"2023-11-14T19:14:17.0653144+00:00\",\"EndTime\":\"2023-11-14T19:19:08.2591213+00:00\",\"Status\":\"Finished\"}}'}, 'inputDatasets': [], 'outputDatasets': [], 'logFiles': {'logs/azureml/executionlogs.txt': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.864659d7-122f-4e42-bb08-0b810dec56e3/logs/azureml/executionlogs.txt?sv=2019-07-07&sr=b&sig=tRfSPMFMq98g2vtdFcwFEf6iGdhO5hPqTo4%2FYdZts04%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A22%3A25Z&ske=2023-11-15T21%3A32%3A25Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A05%3A45Z&se=2023-11-15T03%3A15%3A45Z&sp=r', 'logs/azureml/stderrlogs.txt': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.864659d7-122f-4e42-bb08-0b810dec56e3/logs/azureml/stderrlogs.txt?sv=2019-07-07&sr=b&sig=NQ613Aci%2B53Kj5BujfXefVBp1oRdsdNOAcLnCRsXLm0%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A22%3A25Z&ske=2023-11-15T21%3A32%3A25Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A05%3A45Z&se=2023-11-15T03%3A15%3A45Z&sp=r', 'logs/azureml/stdoutlogs.txt': 'https://usazure0897275170.blob.core.windows.net/azureml/ExperimentRun/dcid.864659d7-122f-4e42-bb08-0b810dec56e3/logs/azureml/stdoutlogs.txt?sv=2019-07-07&sr=b&sig=pkQwXwefB%2BLi%2BDAQRxHGC5HtzAwutmb6M8RKWUzJe14%3D&skoid=ef4b647a-834e-4d78-91fe-c0453e7b4800&sktid=5ac231ff-07da-46e9-9b1d-c924625f23bd&skt=2023-11-14T13%3A22%3A25Z&ske=2023-11-15T21%3A32%3A25Z&sks=b&skv=2019-07-07&st=2023-11-14T19%3A05%3A45Z&se=2023-11-15T03%3A15%3A45Z&sp=r'}, 'submittedBy': 'U SINHA'}\n\n"
+        },
+        {
+          "output_type": "execute_result",
+          "execution_count": 19,
+          "data": {
+            "text/plain": "'Finished'"
+          },
+          "metadata": {}
+        }
+      ],
+      "execution_count": 19,
+      "metadata": {
+        "gather": {
+          "logged": 1699989548900
+        },
+        "jupyter": {
+          "outputs_hidden": false,
+          "source_hidden": false
+        },
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "attachments": {},
+      "cell_type": "markdown",
+      "source": [
+        "##### Step 6: Creating an endpoint and publishing the pipeline"
+      ],
+      "metadata": {
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "from azureml.pipeline.core import PipelineEndpoint\n",
+        "\n",
+        "# The pipeline argument can be either a Pipeline or a PublishedPipeline\n",
+        "pipeline_endpoint = PipelineEndpoint.publish(workspace=ws,\n",
+        "                                             name=\"pima_training_PipelineEndpoint_SDKv1_02\",\n",
+        "                                             pipeline=pipeline,\n",
+        "                                             description=\"pipeline to train model\")\n",
+        "\n",
+        "                                               "
+      ],
+      "outputs": [],
+      "execution_count": 22,
+      "metadata": {
+        "gather": {
+          "logged": 1699974084865
+        },
+        "jupyter": {
+          "outputs_hidden": false,
+          "source_hidden": false
+        },
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "## publish it to same endpoint when the pipeline is enhanced or modified\n",
+        "\n",
+        "# published_pipeline = pipeline_run.publish_pipeline(name = 'EnhancedTrainingPipelline',\n",
+        "#                                                    description='pipeline to train model',\n",
+        "#                                                    version='2')\n",
+        "\n",
+        "# pipeline_endpoint = PipelineEndpoint.get(workspace=ws, name=\"training_PipelineEndpoint\")\n",
+        "# pipeline_endpoint.add_default(published_pipeline)\n",
+        "# print(pipeline_endpoint.endpoint)\n",
+        "# pipeline_endpoint"
+      ],
+      "outputs": [],
+      "execution_count": null,
+      "metadata": {
+        "gather": {
+          "logged": 1696481133270
+        },
+        "jupyter": {
+          "outputs_hidden": false,
+          "source_hidden": false
+        },
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "attachments": {},
+      "cell_type": "markdown",
+      "source": [
+        "##### Step 7: Invoking Endpoint\n",
+        "\n",
+        "To run the pipeline from the REST endpoint, you first need an OAuth2 Bearer-type authentication header. This example uses interactive authentication for illustration purposes, but for most production scenarios requiring automated or headless authentication, use service principle authentication as described in this notebook.\n",
+        "\n",
+        "Service principle authentication involves creating an App Registration in Azure Active Directory, generating a client secret, and then granting your service principal role access to your machine learning workspace. You then use the ServicePrincipalAuthentication class to manage your auth flow.\n",
+        "\n",
+        "Both InteractiveLoginAuthentication and ServicePrincipalAuthentication inherit from AbstractAuthentication, and in both cases you use the get_authentication_header() function in the same way to fetch the header"
+      ],
+      "metadata": {
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "from azureml.core.authentication import InteractiveLoginAuthentication\n",
+        "import requests\n",
+        "\n",
+        "# Authentication\n",
+        "interactive_authentication = InteractiveLoginAuthentication()\n",
+        "auth_header = interactive_authentication.get_authentication_header()\n",
+        "print('authentication header ready')\n",
+        "\n",
+        "response = requests.post(pipeline_endpoint.endpoint,\n",
+        "                         headers=auth_header,\n",
+        "                         json={\"ExperimentName\": \"Pima_Training_pipeline_SDKv1\"})\n",
+        "run_id = response.json()[\"Id\"]\n",
+        "# print('pipeline invoked:',)\n",
+        "print(auth_header)"
+      ],
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": "authentication header ready\n{'Authorization': 'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsIng1dCI6IjlHbW55RlBraGMzaE91UjIybXZTdmduTG83WSIsImtpZCI6IjlHbW55RlBraGMzaE91UjIybXZTdmduTG83WSJ9.eyJhdWQiOiJodHRwczovL21hbmFnZW1lbnQuY29yZS53aW5kb3dzLm5ldCIsImlzcyI6Imh0dHBzOi8vc3RzLndpbmRvd3MubmV0LzVhYzIzMWZmLTA3ZGEtNDZlOS05YjFkLWM5MjQ2MjVmMjNiZC8iLCJpYXQiOjE2OTk5NzA1ODMsIm5iZiI6MTY5OTk3MDU4MywiZXhwIjoxNjk5OTc0OTExLCJhY3IiOiIxIiwiYWlvIjoiQVlRQWUvOFZBQUFBWDJ4T2hlcE81cHBUY3libDdpWC93ZEord1pGZDJMaWs3NngyTUZkUHN4RytEWlBzTEpFNkl3N3dOcXZDY08xVmwrS1JQQUZKQVVucGdhWjFERWNZcDZnUENpVEZ2NW5ZWUtPa3lBSDFnMHlWeVRCRlduZ3N2R1FXanI2OGVRazB5N0FYOU5xTzhIY3NzZVkvemtQK2hIdjExM0JtUUMxR2pSRjFGM3B3R0M4PSIsImFsdHNlY2lkIjoiMTpsaXZlLmNvbTowMDAzNDAwMTUwNThDMDBGIiwiYW1yIjpbInB3ZCIsIm1mYSJdLCJhcHBpZCI6IjE4YTY2ZjVmLWRiZGYtNGMxNy05ZGQ3LTE2MzQ3MTJhOWNiZSIsImFwcGlkYWNyIjoiMiIsImVtYWlsIjoidWpfYXpAb3V0bG9vay5jb20iLCJmYW1pbHlfbmFtZSI6IlNJTkhBIiwiZ2l2ZW5fbmFtZSI6IlUiLCJncm91cHMiOlsiZjU0MTQyZWQtYWEyZS00ZDM5LWE0MmEtM2M5Njc5Zjk3Y2E5Il0sImlkcCI6ImxpdmUuY29tIiwiaWR0eXAiOiJ1c2VyIiwiaXBhZGRyIjoiMjQwNToyMDE6NDAxMzo2MDY0OmE5MWU6OGQwOjliM2E6MzVhYiIsIm5hbWUiOiJVIFNJTkhBIiwib2lkIjoiMjI1MTBkNjAtYjA2NC00YjBkLTkzMzctOTgzOTMzMmY3OWEwIiwicHVpZCI6IjEwMDMyMDAyNTI5MDZBQzIiLCJyaCI6IjAuQVZZQV96SENXdG9INlVhYkhja2tZbDhqdlVaSWYza0F1dGRQdWtQYXdmajJNQk9mQUg4LiIsInNjcCI6InVzZXJfaW1wZXJzb25hdGlvbiIsInN1YiI6IjJudzRvcW5RTG9fNC1XMzV6TzR0em9fTDJnOFQybVQ0bEktaW9SVERWQ28iLCJ0aWQiOiI1YWMyMzFmZi0wN2RhLTQ2ZTktOWIxZC1jOTI0NjI1ZjIzYmQiLCJ1bmlxdWVfbmFtZSI6ImxpdmUuY29tI3VqX2F6QG91dGxvb2suY29tIiwidXRpIjoidVAwVTVWQTZJVS1tVnNLU3hWd2lBQSIsInZlciI6IjEuMCIsIndpZHMiOlsiNjJlOTAzOTQtNjlmNS00MjM3LTkxOTAtMDEyMTc3MTQ1ZTEwIiwiYjc5ZmJmNGQtM2VmOS00Njg5LTgxNDMtNzZiMTk0ZTg1NTA5Il0sInhtc19jYWUiOiIxIiwieG1zX3RjZHQiOjE2Njk3MjAxNjF9.ZMxPZpcnzXf_io8oEdTYhbq6YyM6k3xvLD1V_KEeYA4pK7EInya0NBhbwZh90i1PYmbJJTJQn671kbabwLv_rrU_z0bKC1tDpjKZwh0b60Oz2TIevMrXBnC9FCNx3M_6Oo1u_ji8x873iM77TbYNVwfErtbeYoBHDXXhG7FE6eIt7SRpunJO0OByMb1nbo-m4aVoRDUa7THH1YJTCaSLk27iCVq9oiJcRpMMIZpdjoFQVP7iZ9c1qGz-ttpqfqBhWOoaxPUWJMGKfUe-ikW0F2trn-xx3lezJW1MvpAldN92nAn7LEItvMRnXNo8L_zDczty56clg05u3ulrDlNxLw'}\n"
+        }
+      ],
+      "execution_count": 23,
+      "metadata": {
+        "gather": {
+          "logged": 1699974114134
+        },
+        "jupyter": {
+          "outputs_hidden": false,
+          "source_hidden": false
+        },
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "from azureml.pipeline.core.run import PipelineRun\n",
+        "\n",
+        "published_pipeline_run = PipelineRun(ws.experiments[\"Pima_Training_pipeline_SDKv1\"], run_id)\n",
+        "published_pipeline_run"
+      ],
+      "outputs": [
+        {
+          "output_type": "execute_result",
+          "execution_count": 24,
+          "data": {
+            "text/plain": "Run(Experiment: Pima_Training_pipeline_SDKv1,\nId: f6243499-2688-4f1c-9e64-63d25aeae98a,\nType: azureml.PipelineRun,\nStatus: Running)",
+            "text/html": "<table style=\"width:100%\"><tr><th>Experiment</th><th>Id</th><th>Type</th><th>Status</th><th>Details Page</th><th>Docs Page</th></tr><tr><td>Pima_Training_pipeline_SDKv1</td><td>f6243499-2688-4f1c-9e64-63d25aeae98a</td><td>azureml.PipelineRun</td><td>Running</td><td><a href=\"https://ml.azure.com/runs/f6243499-2688-4f1c-9e64-63d25aeae98a?wsid=/subscriptions/ba5d6a04-af22-45ea-bc5a-946ef1c32949/resourcegroups/us_azure_practice/workspaces/us_azure&amp;tid=5ac231ff-07da-46e9-9b1d-c924625f23bd\" target=\"_blank\" rel=\"noopener\">Link to Azure Machine Learning studio</a></td><td><a href=\"https://docs.microsoft.com/en-us/python/api/overview/azure/ml/intro?view=azure-ml-py\" target=\"_blank\" rel=\"noopener\">Link to Documentation</a></td></tr></table>"
+          },
+          "metadata": {}
+        }
+      ],
+      "execution_count": 24,
+      "metadata": {
+        "gather": {
+          "logged": 1699974124813
+        },
+        "jupyter": {
+          "outputs_hidden": false,
+          "source_hidden": false
+        },
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [],
+      "outputs": [],
+      "execution_count": null,
+      "metadata": {
+        "jupyter": {
+          "source_hidden": false,
+          "outputs_hidden": false
+        },
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "kernel_info": {
+      "name": "python38-azureml"
+    },
+    "kernelspec": {
+      "name": "python38-azureml",
+      "language": "python",
+      "display_name": "Python 3.8 - AzureML"
+    },
+    "language_info": {
+      "name": "python",
+      "version": "3.8.5",
+      "mimetype": "text/x-python",
+      "codemirror_mode": {
+        "name": "ipython",
+        "version": 3
+      },
+      "pygments_lexer": "ipython3",
+      "nbconvert_exporter": "python",
+      "file_extension": ".py"
+    },
+    "microsoft": {
+      "host": {
+        "AzureML": {
+          "notebookHasBeenCompleted": true
+        }
+      },
+      "ms_spell_check": {
+        "ms_spell_check_language": "en"
+      }
+    },
+    "nteract": {
+      "version": "nteract-front-end@1.0.0"
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 2
+}

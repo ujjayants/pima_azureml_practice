@@ -1,0 +1,13 @@
+{"input_data": {
+    "columns": [
+'Pregnancies', 'Glucose', 'BloodPressure', 'SkinThickness',
+       'DiabetesPedigreeFunction', 'Age', 'BM_DESC_Healthy', 'BM_DESC_Obese',
+       'BM_DESC_Over', 'BM_DESC_Under', 'INSULIN_DESC_Abnormal',
+       'INSULIN_DESC_Normal'
+    ],
+    "data": [ [0.0, 139.0, 62.0, 17.0, 210.0, 22.1, 0.207, 21.0] , 
+    [0.0, 139.0, 62.0, 17.0, 210.0, 22.1, 0.207, 21.0] 
+
+    ], "index":[0,1]
+}
+}

@@ -1,0 +1,37 @@
+import json
+import joblib
+import numpy as np
+import os
+from azureml.core import Model
+
+# Called when the service is loaded
+def init():
+    
+    try:
+        global model
+        # Method 1 : pickle name
+        model_path = os.path.join(os.getenv("AZUREML_MODEL_DIR"), 'credit_defaults_model.pkl')
+
+        # Method 2 : Model Name
+        # model_path = Model.get_model_path('credit_defaults_model')
+
+        model = joblib.load(model_path)
+        print('model loaded')
+        print(model)
+    except Exception as e:
+        print('Exception occured:', e)
+    finally:
+        pass
+
+# Called when a request is received
+def run(raw_data):
+
+    print('run function called')
+    data = json.loads(raw_data)["data"]
+    data = np.array(data)
+    result = model.predict(data)
+    print("Request processed")
+    return result.tolist()
+
+    
+    

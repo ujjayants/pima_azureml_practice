@@ -1,0 +1,647 @@
+{
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "source": [
+        "##### Script Deployment: Batch Deployment with scoring script\n",
+        "\n",
+        "**Workflow**\n",
+        "1. Initialize Workspace & creat workspace handle\n",
+        "2. Initialize Compute Cluster & Environment \n",
+        "3. Get referrence of the register model \n",
+        "4. Configure & Create Endpoint\n",
+        "5. Create a Scoring script\n",
+        "6. Configure & Create Deployment\n",
+        "7. Set Deployment as Default\n",
+        "8. Test the Deployment\n",
+        "9. Clean up the resources"
+      ],
+      "metadata": {
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "##### Step 1: Initialize Workspace and Create Workspace handle"
+      ],
+      "metadata": {
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "from azureml.core import Workspace\n",
+        "from azure.ai.ml import MLClient\n",
+        "from azure.identity import DefaultAzureCredential\n",
+        "\n",
+        "# Initialize  workspace\n",
+        "ws = Workspace.from_config()  \n",
+        "\n",
+        "# Get a handle to the workspace\n",
+        "credential = DefaultAzureCredential()  # authenticate\n",
+        "ml_client = MLClient( credential=credential,\n",
+        "                      subscription_id=ws.subscription_id,\n",
+        "                      resource_group_name=ws.resource_group,\n",
+        "                      workspace_name=ws.name,\n",
+        "                    )\n"
+      ],
+      "outputs": [],
+      "execution_count": 1,
+      "metadata": {
+        "gather": {
+          "logged": 1700214472792
+        }
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "##### Step 2: Initialize or Get Compute Cluster"
+      ],
+      "metadata": {
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "from azure.ai.ml.entities import AmlCompute\n",
+        "\n",
+        "# Name assigned to the compute cluster\n",
+        "compute = \"ML-Pipeline-Cluster\"\n",
+        "\n",
+        "try:\n",
+        "    # let's see if the compute target already exists\n",
+        "    cpu_cluster = ml_client.compute.get(compute)\n",
+        "    print(f\"You already have a cluster named {compute}, we'll reuse it as is.\")\n",
+        "\n",
+        "except Exception:\n",
+        "    print(\"Creating a new cpu compute target...\")\n",
+        "    cpu_cluster = AmlCompute(\n",
+        "        name=compute,\n",
+        "        type=\"amlcompute\",\n",
+        "        size=\"STANDARD_DS3_V2\",\n",
+        "        min_instances=0,\n",
+        "        max_instances=4,\n",
+        "        idle_time_before_scale_down=300,\n",
+        "        tier=\"Dedicated\",\n",
+        "    )\n",
+        "    print(f\"AMLCompute with name {cpu_cluster.name} will be created, with compute size {cpu_cluster.size}\")\n",
+        "    \n",
+        "    # Now, we pass the object to MLClient's create_or_update method\n",
+        "    cpu_cluster = ml_client.compute.begin_create_or_update(cpu_cluster)"
+      ],
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": "You already have a cluster named ML-Pipeline-Cluster, we'll reuse it as is.\n"
+        }
+      ],
+      "execution_count": 2,
+      "metadata": {
+        "jupyter": {
+          "source_hidden": false,
+          "outputs_hidden": false
+        },
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        },
+        "gather": {
+          "logged": 1700214473673
+        }
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "##### Environment"
+      ],
+      "metadata": {
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "import os\n",
+        "from azure.ai.ml.entities import Environment\n",
+        "\n",
+        "custom_env_name  = \"ENV-SDKv2\"\n",
+        "# dependencies_dir = '../dependencies'\n",
+        "# env = Environment( name=custom_env_name,\n",
+        "#                    description=\"Evironment for python SDKv2 Execution\",\n",
+        "#                    conda_file=os.path.join(dependencies_dir, \"conda.yaml\"),\n",
+        "#                    image=\"mcr.microsoft.com/azureml/openmpi4.1.0-ubuntu20.04:latest\",\n",
+        "#                  )\n",
+        "# env = ml_client.environments.create_or_update(env)\n",
+        "\n",
+        "# GET ENVIRONMENT\n",
+        "# use 'label' parameter to get latest environment for example label='latest'\n",
+        "# use 'version' parameter to get specific version environment, for example version=2\n",
+        "env = ml_client.environments.get(name=custom_env_name, label='latest') \n",
+        "\n",
+        "print(f\"Environment with name {env.name} is registered to workspace, the environment version is {env.version}\")"
+      ],
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": "Environment with name ENV-SDKv2 is registered to workspace, the environment version is 9\n"
+        }
+      ],
+      "execution_count": 3,
+      "metadata": {
+        "jupyter": {
+          "source_hidden": false,
+          "outputs_hidden": false
+        },
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        },
+        "gather": {
+          "logged": 1700214477779
+        }
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "##### Step 3: Get referrence to Registered Model"
+      ],
+      "metadata": {
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "model_name='pima_model_SDKv2_04'\n",
+        "model = ml_client.models.get(name=model_name, label=\"latest\")"
+      ],
+      "outputs": [],
+      "execution_count": 4,
+      "metadata": {
+        "jupyter": {
+          "source_hidden": false,
+          "outputs_hidden": false
+        },
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        },
+        "gather": {
+          "logged": 1700214482097
+        }
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "##### Step 4: Configure and Create Batch Endpoint\n",
+        "\n",
+        "Batch endpoints are endpoints that are used batch inferencing on large volumes of data over a period of time. Batch endpoints receive pointers to data and run jobs asynchronously to process the data in parallel on compute clusters. Batch endpoints store outputs to a data store for further analysis.\n",
+        "\n",
+        "To create an online endpoint we will use `BatchEndpoint`. This class allows user to configure the following key aspects:\n",
+        "- `name` - Name of the endpoint. Needs to be unique at the Azure region level\n",
+        "- `auth_mode` - The authentication method for the endpoint. Currently only Azure Active Directory (Azure AD) token-based (`aad_token`) authentication is supported. \n",
+        "- `description`- Description of the endpoint."
+      ],
+      "metadata": {
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "from azure.ai.ml.entities import BatchEndpoint\n",
+        "\n",
+        "# configure\n",
+        "endpoint_name = \"pima-batch-endpoint-sdk-v2\"\n",
+        "endpoint = BatchEndpoint( name=endpoint_name,\n",
+        "                          description=\"Sample Batch Endpoint using SDKv2\"\n",
+        "                          )\n",
+        "\n",
+        "# create\n",
+        "ml_client.batch_endpoints.begin_create_or_update(endpoint).result()"
+      ],
+      "outputs": [
+        {
+          "output_type": "execute_result",
+          "execution_count": 5,
+          "data": {
+            "text/plain": "<azure.ai.ml._restclient.v2022_05_01.models._models_py3.BatchEndpointData at 0x7f49d8439000>"
+          },
+          "metadata": {}
+        }
+      ],
+      "execution_count": 5,
+      "metadata": {
+        "jupyter": {
+          "source_hidden": false,
+          "outputs_hidden": false
+        },
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        },
+        "gather": {
+          "logged": 1700214518822
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# endpoint_name = \"pima-batch-endpoint-sdk-v2\"\n",
+        "# endpoint = ml_client.batch_endpoints.get(endpoint_name)"
+      ],
+      "outputs": [],
+      "execution_count": 6,
+      "metadata": {
+        "jupyter": {
+          "source_hidden": false,
+          "outputs_hidden": false
+        },
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        },
+        "gather": {
+          "logged": 1700050024372
+        }
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "##### Step 5: Create a Scoring Script\n",
+        "we'll use scoring script in our next step, Batch Deployment"
+      ],
+      "metadata": {
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "##### Step 6: Configure & Create a batch deployment\n"
+      ],
+      "metadata": {
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# imports\n",
+        "from azure.ai.ml.entities import ( \n",
+        "                                  ModelBatchDeployment,\n",
+        "                                  ModelBatchDeploymentSettings,\n",
+        "                                  BatchRetrySettings,\n",
+        "                                  CodeConfiguration\n",
+        "                                )\n",
+        "from azure.ai.ml.constants import BatchDeploymentOutputAction\n",
+        "\n",
+        "# configure\n",
+        "deployment_name = 'script-deployment-batch'\n",
+        "deployment = ModelBatchDeployment(\n",
+        "    name=deployment_name,\n",
+        "    description=\"pima diabetes classifier with a custom scoring script\",\n",
+        "    endpoint_name=endpoint.name,\n",
+        "    model=model,\n",
+        "    environment=env,\n",
+        "    code_configuration=CodeConfiguration(code=\"../src\", scoring_script=\"pima_scoreBatchEndpoint_SDKv2.py\"),\n",
+        "    compute=compute,\n",
+        "    settings=ModelBatchDeploymentSettings(\n",
+        "        instance_count=2,\n",
+        "        max_concurrency_per_instance=2,\n",
+        "        mini_batch_size=10,\n",
+        "        output_action=BatchDeploymentOutputAction.APPEND_ROW,\n",
+        "        output_file_name=\"predictions.csv\",\n",
+        "        retry_settings=BatchRetrySettings(max_retries=3, timeout=300),\n",
+        "        logging_level=\"info\",\n",
+        "    ),\n",
+        ")\n",
+        "\n",
+        "# create deployment\n",
+        "ml_client.batch_deployments.begin_create_or_update(deployment).result()"
+      ],
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stderr",
+          "text": "Class ModelBatchDeploymentSettings: This is an experimental class, and may change at any time. Please see https://aka.ms/azuremlexperimental for more information.\nClass ModelBatchDeployment: This is an experimental class, and may change at any time. Please see https://aka.ms/azuremlexperimental for more information.\n"
+        },
+        {
+          "output_type": "execute_result",
+          "execution_count": 6,
+          "data": {
+            "text/plain": "BatchDeployment({'provisioning_state': 'Succeeded', 'endpoint_name': 'pima-batch-endpoint-sdk-v2', 'type': None, 'name': 'script-deployment-batch', 'description': 'pima diabetes classifier with a custom scoring script', 'tags': {}, 'properties': {}, 'print_as_yaml': True, 'id': '/subscriptions/ba5d6a04-af22-45ea-bc5a-946ef1c32949/resourceGroups/us_azure_practice/providers/Microsoft.MachineLearningServices/workspaces/us_azure/batchEndpoints/pima-batch-endpoint-sdk-v2/deployments/script-deployment-batch', 'Resource__source_path': None, 'base_path': '/mnt/batch/tasks/shared/LS_root/mounts/clusters/instancenotebook/code/Users/uj_az/PIMA/03-Deploying-Batch-Endpoint/SDKv2/notebooks', 'creation_context': <azure.ai.ml.entities._system_data.SystemData object at 0x7f49d843b070>, 'serialize': <msrest.serialization.Serializer object at 0x7f49d843a380>, 'model': '/subscriptions/ba5d6a04-af22-45ea-bc5a-946ef1c32949/resourceGroups/us_azure_practice/providers/Microsoft.MachineLearningServices/workspaces/us_azure/models/pima_model_SDKv2_04/versions/3', 'code_configuration': {'code': '/subscriptions/ba5d6a04-af22-45ea-bc5a-946ef1c32949/resourceGroups/us_azure_practice/providers/Microsoft.MachineLearningServices/workspaces/us_azure/codes/214db187-beb2-4b1e-83f6-99a6f63cb678/versions/1'}, 'environment': '/subscriptions/ba5d6a04-af22-45ea-bc5a-946ef1c32949/resourceGroups/us_azure_practice/providers/Microsoft.MachineLearningServices/workspaces/us_azure/environments/ENV-SDKv2/versions/9', 'environment_variables': {}, 'compute': '/subscriptions/ba5d6a04-af22-45ea-bc5a-946ef1c32949/resourceGroups/us_azure_practice/providers/Microsoft.MachineLearningServices/workspaces/us_azure/computes/ML-Pipeline-Cluster', 'resources': {'instance_count': 1, 'properties': {}}, 'output_action': 'append_row', 'output_file_name': 'predictions.csv', 'error_threshold': -1, 'retry_settings': <azure.ai.ml.entities._deployment.deployment_settings.BatchRetrySettings object at 0x7f49d8439ab0>, 'logging_level': 'Info', 'mini_batch_size': 10, 'max_concurrency_per_instance': 2})"
+          },
+          "metadata": {}
+        }
+      ],
+      "execution_count": 6,
+      "metadata": {
+        "jupyter": {
+          "source_hidden": false,
+          "outputs_hidden": false
+        },
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        },
+        "gather": {
+          "logged": 1700214577582
+        }
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "##### Step 7: Set the deployment as Default Deployment"
+      ],
+      "metadata": {
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "endpoint = ml_client.batch_endpoints.get(endpoint.name)\n",
+        "endpoint.defaults.deployment_name = deployment.name\n",
+        "ml_client.batch_endpoints.begin_create_or_update(endpoint).result()\n",
+        "print(f\"The default deployment is {endpoint.defaults.deployment_name}\")\n",
+        "\n"
+      ],
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": "The default deployment is script-deployment-batch\n"
+        }
+      ],
+      "execution_count": 7,
+      "metadata": {
+        "jupyter": {
+          "source_hidden": false,
+          "outputs_hidden": false
+        },
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        },
+        "gather": {
+          "logged": 1700214615058
+        }
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "##### Step 8: Testing the deployment\n",
+        "- Get Test Data\n",
+        "- create input for deployment\n",
+        "- Invoke the deployment\n"
+      ],
+      "metadata": {
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "from azure.ai.ml import Input\n",
+        "from azure.ai.ml.constants import AssetTypes\n",
+        "# Test Data\n",
+        "dataset_name = 'test_pima'  #'test_pima_data_typeFile_SDKv2'\n",
+        "test_data =  ml_client.data.get(name = dataset_name, label = \"latest\")\n",
+        "#deployment_name = 'script-deployment-batch'\n",
+        "\n"
+      ],
+      "outputs": [],
+      "execution_count": 8,
+      "metadata": {
+        "jupyter": {
+          "source_hidden": false,
+          "outputs_hidden": false
+        },
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        },
+        "gather": {
+          "logged": 1700214747427
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# creating an input for the deployment\n",
+        "test_input = Input(type=AssetTypes.URI_FILE , path=test_data.id)\n",
+        "\n",
+        "\n",
+        "# Invoke the deployment\n",
+        "#job = ml_client.batch_endpoints.invoke(endpoint_name=endpoint.name, input= test_input)\n",
+        "\n",
+        "# job = ml_client.batch_endpoints.invoke(endpoint_name=endpoint.name, inputs= inputs)\n",
+        "\n",
+        "job = ml_client.batch_endpoints.invoke(deployment_name= deployment_name, \n",
+        "                                       endpoint_name=endpoint.name, \n",
+        "                                       \n",
+        "                                       input= test_input\n",
+        "\n",
+        "                                       )\n",
+        "# Get details of invoked job\n",
+        "ml_client.jobs.get(job.name)"
+      ],
+      "outputs": [
+        {
+          "output_type": "execute_result",
+          "execution_count": 10,
+          "data": {
+            "text/plain": "PipelineJob({'inputs': {}, 'outputs': {}, 'jobs': {}, 'component': PipelineComponent({'intellectual_property': None, 'auto_increment_version': False, 'source': 'REMOTE.WORKSPACE.JOB', 'is_anonymous': True, 'auto_delete_setting': None, 'name': 'azureml_anonymous', 'description': \"Attempting to create pipeline submission settings for endpoint: 'pima-batch-endpoint-sdk-v2', deployment: 'script-deployment-batch'.\", 'tags': {}, 'properties': {}, 'print_as_yaml': True, 'id': None, 'Resource__source_path': None, 'base_path': '/mnt/batch/tasks/shared/LS_root/mounts/clusters/instancenotebook/code/Users/uj_az/PIMA/03-Deploying-Batch-Endpoint/SDKv2/notebooks', 'creation_context': None, 'serialize': <msrest.serialization.Serializer object at 0x7f49d843a890>, 'version': '1', 'latest_version': None, 'schema': None, 'type': 'pipeline', 'display_name': 'tender_nose_s8x99219', 'is_deterministic': None, 'inputs': {}, 'outputs': {}, 'yaml_str': None, 'other_parameter': {}, 'jobs': {}, 'job_types': {}, 'job_sources': {}, 'source_job_id': None}), 'type': 'pipeline', 'status': 'Preparing', 'log_files': None, 'name': 'batchjob-b36df951-1f42-476f-96c5-bf3032b4d5e1', 'description': \"Attempting to create pipeline submission settings for endpoint: 'pima-batch-endpoint-sdk-v2', deployment: 'script-deployment-batch'.\", 'tags': {'outputType': 'output_data', 'output_data_name': None, 'inputType': 'input_data', 'azureml.batchrun': 'true', 'azureml.deploymentname': 'script-deployment-batch', 'azureml.jobtype': 'azureml.batchjob'}, 'properties': {'azureml.deploymentname': 'script-deployment-batch', 'azureml.endpointname': 'pima-batch-endpoint-sdk-v2', 'azureml.pipelineid': 'c4fb2033-98cc-4c3a-a30a-514069609e80', 'azureml.runsource': 'azureml.PipelineRun', 'runSource': 'Unavailable', 'runType': 'HTTP', 'azureml.parameters': '{\"run_max_try\":\"3\",\"run_invocation_timeout\":\"300\",\"mini_batch_size\":\"10\",\"error_threshold\":\"-1\",\"logging_level\":\"INFO\",\"process_count_per_node\":\"2\",\"NodeCount\":\"1\",\"append_row_file_name\":\"predictions.csv\"}', 'azureml.continue_on_step_failure': 'False', 'azureml.continue_on_failed_optional_input': 'False', 'azureml.pipelineComponent': 'pipelinerun'}, 'print_as_yaml': True, 'id': '/subscriptions/ba5d6a04-af22-45ea-bc5a-946ef1c32949/resourceGroups/us_azure_practice/providers/Microsoft.MachineLearningServices/workspaces/us_azure/jobs/batchjob-b36df951-1f42-476f-96c5-bf3032b4d5e1', 'Resource__source_path': None, 'base_path': '/mnt/batch/tasks/shared/LS_root/mounts/clusters/instancenotebook/code/Users/uj_az/PIMA/03-Deploying-Batch-Endpoint/SDKv2/notebooks', 'creation_context': <azure.ai.ml.entities._system_data.SystemData object at 0x7f49d843abf0>, 'serialize': <msrest.serialization.Serializer object at 0x7f49d843aa70>, 'display_name': 'tender_nose_s8x99219', 'experiment_name': 'pima-batch-endpoint-sdk-v2', 'compute': None, 'services': {'Tracking': {'endpoint': 'azureml://centralindia.api.azureml.ms/mlflow/v1.0/subscriptions/ba5d6a04-af22-45ea-bc5a-946ef1c32949/resourceGroups/us_azure_practice/providers/Microsoft.MachineLearningServices/workspaces/us_azure?', 'type': 'Tracking'}, 'Studio': {'endpoint': 'https://ml.azure.com/runs/batchjob-b36df951-1f42-476f-96c5-bf3032b4d5e1?wsid=/subscriptions/ba5d6a04-af22-45ea-bc5a-946ef1c32949/resourcegroups/us_azure_practice/workspaces/us_azure&tid=5ac231ff-07da-46e9-9b1d-c924625f23bd', 'type': 'Studio'}}, 'settings': {}, 'identity': None, 'default_code': None, 'default_environment': None})",
+            "text/html": "<table style=\"width:100%\"><tr><th>Experiment</th><th>Name</th><th>Type</th><th>Status</th><th>Details Page</th></tr><tr><td>pima-batch-endpoint-sdk-v2</td><td>batchjob-b36df951-1f42-476f-96c5-bf3032b4d5e1</td><td>pipeline</td><td>Preparing</td><td><a href=\"https://ml.azure.com/runs/batchjob-b36df951-1f42-476f-96c5-bf3032b4d5e1?wsid=/subscriptions/ba5d6a04-af22-45ea-bc5a-946ef1c32949/resourcegroups/us_azure_practice/workspaces/us_azure&amp;tid=5ac231ff-07da-46e9-9b1d-c924625f23bd\" target=\"_blank\" rel=\"noopener\">Link to Azure Machine Learning studio</a></td></tr></table>"
+          },
+          "metadata": {}
+        }
+      ],
+      "execution_count": 10,
+      "metadata": {
+        "jupyter": {
+          "source_hidden": false,
+          "outputs_hidden": false
+        },
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        },
+        "gather": {
+          "logged": 1700214787470
+        }
+      }
+    },
+    {
+      "cell_type": "markdown",
+      "source": [
+        "##### Step 9: Clean up resources"
+      ],
+      "metadata": {
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "ml_client.batch_endpoints.begin_delete(endpoint_name).result()"
+      ],
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": "...."
+        }
+      ],
+      "execution_count": null,
+      "metadata": {
+        "jupyter": {
+          "source_hidden": false,
+          "outputs_hidden": false
+        },
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        },
+        "gather": {
+          "logged": 1699785365091
+        }
+      }
+    },
+    {
+      "cell_type": "code",
+      "source": [],
+      "outputs": [
+        {
+          "output_type": "execute_result",
+          "execution_count": 8,
+          "data": {
+            "text/plain": "'pima-batch-endpoint-sdk-v2'"
+          },
+          "metadata": {}
+        }
+      ],
+      "execution_count": 8,
+      "metadata": {
+        "jupyter": {
+          "source_hidden": false,
+          "outputs_hidden": false
+        },
+        "nteract": {
+          "transient": {
+            "deleting": false
+          }
+        },
+        "gather": {
+          "logged": 1700046208578
+        }
+      }
+    }
+  ],
+  "metadata": {
+    "kernelspec": {
+      "name": "python310-sdkv2",
+      "language": "python",
+      "display_name": "Python 3.10 - SDK v2"
+    },
+    "language_info": {
+      "name": "python",
+      "version": "3.10.11",
+      "mimetype": "text/x-python",
+      "codemirror_mode": {
+        "name": "ipython",
+        "version": 3
+      },
+      "pygments_lexer": "ipython3",
+      "nbconvert_exporter": "python",
+      "file_extension": ".py"
+    },
+    "microsoft": {
+      "ms_spell_check": {
+        "ms_spell_check_language": "en"
+      },
+      "host": {
+        "AzureML": {
+          "notebookHasBeenCompleted": true
+        }
+      }
+    },
+    "kernel_info": {
+      "name": "python310-sdkv2"
+    },
+    "nteract": {
+      "version": "nteract-front-end@1.0.0"
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 2
+}
